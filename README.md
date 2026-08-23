@@ -1,110 +1,236 @@
+# ☁️ Suny
+
+<p align="center">
+  <strong>مدیریت هوشمند تغییر IP مقصد تانل با Cloudflare</strong><br>
+  چرخش خودکار IP • بررسی سلامت • تشخیص احتمالی فیلترینگ • Health Check چندکشوری
+</p>
+
+---
+
+## 🚀 نصب
+
+دستور زیر را **دقیقاً به‌تنهایی** کپی و اجرا کنید:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/sunyro/suny/main/install.sh)
+```
+
+> 💡 اگر با کاربر `root` هستید همین دستور کافی است.
+>
+> برای اجرای برنامه بعد از نصب:
+
+```bash
 suny
+```
 
-Cloudflare IP Rotate Manager for tunnel backends, with distributed health checks.
+اگر کاربر عادی هستید و `sudo` دارید:
 
-What it does
-
-Stores multiple backend IPs for each Cloudflare A record.
-
-Rotates the DNS record manually or by cron.
-
-Optionally checks the next backend from distributed Check-Host nodes before switching DNS.
-
-Tests the actual tunnel TCP port rather than relying only on ICMP ping.
-
-Checks Iran plus multiple external regions.
-
-Reports HEALTHY, DEGRADED, LIKELY FILTERED, OFFLINE, or UNKNOWN.
-
-Skips a failed candidate during automatic rotation when health checking is enabled.
-
-Keeps the rotation index unchanged unless the Cloudflare update succeeds.
-
-Prevents overlapping automatic rotations with a lock.
-
-Includes a menu option to uninstall suny completely.
-
-Install
-
+```bash
 curl -fsSL https://raw.githubusercontent.com/sunyro/suny/main/install.sh | sudo bash
 sudo suny
+```
 
-The installer installs curl, jq, and util-linux on apt-based systems.
+---
 
-Cloudflare API Token
+## 🎯 Suny چه کاری انجام می‌دهد؟
 
-Do not use a Global API Key or an unrestricted account token.
+فرض کنید چند سرور ایران برای تانل دارید:
 
-Create a scoped API Token with:
+```text
+دامنه شما
+    │
+    ▼
+tunnel.example.com
+    │
+    ▼
+Cloudflare DNS
+    │
+    ├── 1.2.3.4   ← سرور ایران ۱
+    ├── 5.6.7.8   ← سرور ایران ۲
+    └── 9.10.11.12 ← سرور ایران ۳
+```
 
-Zone -> DNS -> Edit
+Suny این IPها را نگه می‌دارد و طبق زمان‌بندی شما DNS Record را به IP بعدی منتقل می‌کند.
 
-Zone -> Zone -> Read
+### مثال
 
-Limit the token to only the zone(s) managed by suny.
+```text
+00:00 → 1.2.3.4
+01:00 → 5.6.7.8
+02:00 → 9.10.11.12
+03:00 → 1.2.3.4
+```
 
-Health checking
+این تغییر از طریق API کلادفلر انجام می‌شود و نیازی به تغییر دستی IP دامنه نیست.
 
-Health checks use Check-Host distributed nodes. The tunnel's real TCP port is tested (for example 443, 8443, or another port).
+---
 
-The classification is a heuristic:
+## ✨ قابلیت‌ها
 
-HEALTHY: external reachability meets the configured threshold.
+- 🔄 چرخش دستی یا خودکار IPها
+- 🌐 مدیریت چند دامنه
+- 🩺 بررسی سلامت IP قبل از Rotate
+- 🌍 تست TCP از نودهای مختلف بین‌المللی با Check-Host
+- 🇮🇷 مقایسه وضعیت دسترسی ایران با کشورهای خارجی
+- 🚨 تشخیص احتمالی IP فیلترشده
+- ⏭️ رد کردن IP خراب هنگام Rotate خودکار
+- 🔒 جلوگیری از اجرای هم‌زمان چند Rotate
+- ⏰ زمان‌بندی خودکار با Cron
+- 🗑️ حذف کامل برنامه از داخل منو
 
-DEGRADED: Iran is reachable but external reachability is below the threshold.
+---
 
-LIKELY FILTERED: Iran is reachable while all selected external probes fail.
+## 🩺 Health Check چگونه کار می‌کند؟
 
-OFFLINE / UNREACHABLE: the Iran probe also fails.
+Suny فقط به Ping اعتماد نمی‌کند. پورت واقعی تانل شما را بررسی می‌کند؛ مثلاً:
 
-UNKNOWN: the Check-Host service did not provide a usable result.
+```text
+443
+8443
+2053
+یا هر پورت دیگری
+```
 
-LIKELY FILTERED is not proof of censorship; firewalls, routing, provider outages, or a closed tunnel port can produce the same result.
+برای هر IP، وضعیت کلی به این شکل نمایش داده می‌شود:
 
-A Check-Host API key is optional. Anonymous checks have conservative rate limits; a key can raise limits.
+| وضعیت | معنی |
+|---|---|
+| 🟢 HEALTHY | از تعداد قابل‌قبولی از نودهای خارجی در دسترس است |
+| 🟡 DEGRADED | بخشی از نودها دسترسی دارند |
+| 🔴 LIKELY FILTERED | ایران قابل دسترسی است ولی نودهای خارجی انتخاب‌شده ناموفق هستند |
+| ⚫ OFFLINE | پورت تانل از نود بررسی‌شده در دسترس نیست |
+| ⚪ UNKNOWN | نتیجه قابل‌اعتمادی از سرویس بررسی دریافت نشد |
 
-Menu
+> ⚠️ `LIKELY FILTERED` تشخیص احتمالی است و اثبات قطعی فیلترینگ نیست؛ فایروال، مشکل Routing، قطعی سرور یا بسته بودن پورت هم می‌تواند نتیجه مشابه ایجاد کند.
 
-Set Cloudflare API Token
+---
 
-Add Domain
+## 🔄 Health Check هنگام Rotate
 
-List Domains
+اگر Health Check برای یک دامنه فعال باشد:
 
-Delete Domain
+```text
+زمان Rotate
+    ↓
+IP بعدی انتخاب می‌شود
+    ↓
+Health Check
+    ↓
+سالم است؟
+ ├── بله → DNS کلادفلر تغییر می‌کند
+ └── خیر → IP بعدی بررسی می‌شود
+```
 
-Rotate All Now
+بنابراین تا حد امکان دامنه روی یک IP خراب منتقل نمی‌شود.
 
-Rotate One Domain
+---
 
-Install Hourly Cron
+## 🔐 ساخت Cloudflare API Token
 
-Remove Cron
+برای Suny نیازی به API Token با دسترسی کامل ندارید.
 
-Health Check Domain
+در Cloudflare یک API Token با دسترسی‌های زیر بسازید:
 
-Set Check-Host API Key (optional)
+```text
+Zone → DNS → Edit
+Zone → Zone → Read
+```
 
-Help: Cloudflare / Health Check
+سپس Token را فقط به Zoneهای موردنیاز محدود کنید.
 
-Uninstall suny
+این Token داخل فایل زیر ذخیره می‌شود:
 
-Exit
+```text
+/etc/suny/config.env
+```
 
-Domain format
+با دسترسی محدود:
 
-The current format is:
+```text
+600
+```
 
+---
+
+## 📋 منوی برنامه
+
+```text
+1) تنظیم Cloudflare API Token
+2) افزودن دامنه
+3) نمایش دامنه‌ها
+4) حذف دامنه
+5) Rotate همه دامنه‌ها
+6) Rotate یک دامنه
+7) فعال‌سازی Rotate خودکار
+8) حذف Rotate خودکار
+9) بررسی سلامت IPها
+10) تنظیم Check-Host API Key (اختیاری)
+11) راهنما
+12) حذف کامل Suny
+0) خروج
+```
+
+---
+
+## 🗑️ حذف کامل
+
+از داخل برنامه گزینه **Uninstall** را انتخاب کنید.
+
+یا از طریق دستور:
+
+```bash
+suny
+```
+
+Suny هنگام حذف:
+
+- فایل‌های برنامه را حذف می‌کند
+- تنظیمات و وضعیت‌های ذخیره‌شده را حذف می‌کند
+- Cron را حذف می‌کند
+- Symlink دستور `suny` را حذف می‌کند
+
+> ❗ رکوردهای DNS کلادفلر و سرورهای شما حذف نمی‌شوند.
+
+---
+
+## 📦 ساختار داده دامنه
+
+فرمت جدید:
+
+```text
 name|zone_id|record_id|ip1,ip2,ip3|ttl|proxied|health_port|health_enabled|min_success
+```
 
-Example:
+مثال:
 
-cdn.example.com|ZONE_ID|RECORD_ID|1.2.3.4,5.6.7.8,9.10.11.12|120|false|443|true|60
+```text
+tunnel.example.com|ZONE_ID|RECORD_ID|1.2.3.4,5.6.7.8,9.10.11.12|120|false|443|true|60
+```
 
-Old six-field entries remain readable; health checking defaults to disabled for them.
+تنظیمات قدیمی ۶ بخشی همچنان قابل خواندن هستند و Health Check برای آن‌ها به‌صورت پیش‌فرض غیرفعال است.
 
-Security
+---
 
-The Cloudflare token is stored in /etc/suny/config.env with mode 600. The Check-Host API key, if configured, is stored there as well.
+## ⚠️ نکته مهم درباره نصب
 
-The uninstall option removes suny files, state, logs, cron, and the /usr/local/bin/suny symlink. It does not delete Cloudflare DNS records or remote servers.
+اگر این خطا را دیدید:
+
+```text
+/usr/bin/sudo: /usr/bin/sudo: cannot execute binary file
+```
+
+معمولاً علت این است که دو دستور را بدون جدا کردن در یک خط اجرا کرده‌اید:
+
+```text
+... | sudo bash sudo suny   ❌
+```
+
+دستور نصب و اجرای برنامه باید جدا باشند، یا از دستور نصب تک‌خطی پیشنهادی بالای صفحه استفاده کنید.
+
+---
+
+## ❤️ توسعه
+
+پروژه برای مدیریت IP مقصد تانل‌ها پشت دامنه Cloudflare طراحی شده است.
+
+اگر باگ یا پیشنهادی دارید، یک Issue در همین مخزن ثبت کنید.
